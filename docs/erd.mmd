@@ -1,0 +1,49 @@
+erDiagram
+    SPORTS {
+        INTEGER id PK
+        TEXT name "NOT NULL, UNIQUE"
+    }
+
+    COMPETITIONS {
+        INTEGER id PK
+        TEXT name "NOT NULL"
+        INTEGER _sport_id FK "NOT NULL"
+    }
+
+    STAGES {
+        INTEGER id PK
+        TEXT name "NOT NULL, UNIQUE"
+    }
+
+    TEAMS {
+        INTEGER id PK
+        TEXT name "NOT NULL, UNIQUE"
+    }
+
+    VENUES {
+        INTEGER id PK
+        TEXT name "NULLABLE"
+        TEXT city "NULLABLE"
+        TEXT country "NULLABLE"
+    }
+
+    EVENTS {
+        INTEGER id PK
+        DATETIME kickoff_at "NOT NULL"
+        TEXT status "NOT NULL, DEFAULT scheduled"
+        INTEGER home_goals "NULLABLE"
+        INTEGER away_goals "NULLABLE"
+        TEXT description "NULLABLE"
+        INTEGER _competition_id FK "NOT NULL"
+        INTEGER _stage_id FK "NULLABLE"
+        INTEGER _home_team_id FK "NOT NULL"
+        INTEGER _away_team_id FK "NOT NULL"
+        INTEGER _venue_id FK "NOT NULL"
+    }
+
+    SPORTS ||--o{ COMPETITIONS : has
+    COMPETITIONS ||--o{ EVENTS : contains
+    STAGES ||--o{ EVENTS : classifies
+    TEAMS ||--o{ EVENTS : home_team
+    TEAMS ||--o{ EVENTS : away_team
+    VENUES ||--o{ EVENTS : hosts
