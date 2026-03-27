@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Event #{{ event.id }} | Sports Event Calendar{% endblock %}
+
+{% block content %}
+  <h1>Event Detail</h1>
+  <p class="small"><a href="{{ url_for('list_events') }}">Back to events</a></p>
+
+  <div class="card">
+    <table>
+      <tbody>
+        <tr>
+          <th>Event ID</th>
+          <td>{{ event.id }}</td>
+        </tr>
+        <tr>
+          <th>Date</th>
+          <td>{{ event.kickoff_at.strftime("%Y-%m-%d") }}</td>
+        </tr>
+        <tr>
+          <th>Time (UTC)</th>
+          <td>{{ event.kickoff_at.strftime("%H:%M") }}</td>
+        </tr>
+        <tr>
+          <th>Sport</th>
+          <td>{{ event.competition.sport.name }}</td>
+        </tr>
+        <tr>
+          <th>Competition</th>
+          <td>{{ event.competition.name }}</td>
+        </tr>
+        <tr>
+          <th>Stage</th>
+          <td>{{ event.stage.name if event.stage else "Not assigned" }}</td>
+        </tr>
+        <tr>
+          <th>Home / Away</th>
+          <td>{{ event.home_team.name }} vs {{ event.away_team.name }}</td>
+        </tr>
+        <tr>
+          <th>Venue Name</th>
+          <td>{{ event.venue.name if event.venue.name else "Not available" }}</td>
+        </tr>
+        <tr>
+          <th>Venue City/Country</th>
+          <td>
+            {% if event.venue.city or event.venue.country %}
+              {{ event.venue.city or "Unknown city" }}, {{ event.venue.country or "Unknown country" }}
+            {% else %}
+              Not available
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>Status</th>
+          <td>{{ event.status }}</td>
+        </tr>
+        <tr>
+          <th>Scores</th>
+          <td>
+            {% if event.home_goals is not none or event.away_goals is not none %}
+              {{ event.home_goals if event.home_goals is not none else "-" }} - {{ event.away_goals if event.away_goals is not none else "-" }}
+            {% else %}
+              Not available
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>Description</th>
+          <td>{{ event.description if event.description else "No description" }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

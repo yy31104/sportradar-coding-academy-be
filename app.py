@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from flask import Flask, redirect, render_template, url_for
+from flask import Flask, abort, redirect, render_template, url_for
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import joinedload
 
@@ -48,6 +48,24 @@ def create_app() -> Flask:
             )
 
         return render_template("events_list.html", events=events, warning=warning)
+
+    @app.get("/events/<int:event_id>")
+    def event_detail(event_id: int):
+        event = (
+            Event.query.options(
+                joinedload(Event.competition).joinedload(Competition.sport),
+                joinedload(Event.stage),
+                joinedload(Event.home_team),
+                joinedload(Event.away_team),
+                joinedload(Event.venue),
+            )
+            .filter(Event.id == event_id)
+            .first()
+        )
+        if event is None:
+            abort(404, description=f"Event with id {event_id} was not found.")
+
+        return render_template("event_detail.html", event=event)
 
     return app
 

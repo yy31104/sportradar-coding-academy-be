@@ -34,7 +34,12 @@
                 <div>{{ event.competition.name }}</div>
                 <div class="small">Stage: {{ event.stage.name if event.stage else "Not assigned" }}</div>
               </td>
-              <td>{{ event.home_team.name }} vs {{ event.away_team.name }}</td>
+              <td>
+                <a href="{{ url_for('event_detail', event_id=event.id) }}">
+                  {{ event.home_team.name }} vs {{ event.away_team.name }}
+                </a>
+                <div class="small">Event ID: {{ event.id }}</div>
+              </td>
               <td>
                 {% if event.venue.name %}
                   {{ event.venue.name }}
