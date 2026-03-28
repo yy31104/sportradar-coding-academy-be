@@ -4,7 +4,10 @@
 
 {% block content %}
   <h1>Events</h1>
-  <p class="small">Ordered by kickoff time.</p>
+  <p class="small">
+    Ordered by kickoff time.
+    <a href="{{ url_for('create_event') }}">Add a new event</a>.
+  </p>
 
   {% if warning %}
     <div class="warning">{{ warning }}</div>

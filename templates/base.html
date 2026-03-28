@@ -43,7 +43,9 @@
         text-decoration: none;
         margin-left: 16px;
       }
-      .links a:hover, .links a.active {
+      .links a:hover,
+      .links a.active,
+      .links a[aria-current="page"] {
         color: var(--accent);
       }
       .container {
@@ -96,11 +98,20 @@
   <body>
     <nav class="nav">
       <div class="nav-inner">
-        <div class="brand">Sports Event Calendar</div>
+        <a href="{{ url_for('list_events') }}" class="brand" style="text-decoration: none; color: inherit;">Sports Event Calendar</a>
         <div class="links">
-          <a href="{{ url_for('list_events') }}" class="active">Events</a>
-          <a href="#">Event Detail (open from list)</a>
-          <a href="{{ url_for('create_event') }}">Add Event</a>
+          <a
+            href="{{ url_for('list_events') }}"
+            {% if request.endpoint in ["list_events", "event_detail"] %}aria-current="page"{% endif %}
+          >
+            Events
+          </a>
+          <a
+            href="{{ url_for('create_event') }}"
+            {% if request.endpoint == "create_event" %}aria-current="page"{% endif %}
+          >
+            Add Event
+          </a>
         </div>
       </div>
     </nav>
