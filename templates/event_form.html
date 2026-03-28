@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Add Event | Sports Event Calendar{% endblock %}
+
+{% block content %}
+  <h1>Add Event</h1>
+  <p class="small">Create a new event using existing competition, team, stage, and venue records.</p>
+
+  {% if errors %}
+    <div class="warning">
+      <strong>Please fix the following:</strong>
+      <ul>
+        {% for error in errors %}
+          <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form method="post" class="card" style="padding: 16px;">
+    <table>
+      <tbody>
+        <tr>
+          <th>Kickoff Date/Time *</th>
+          <td>
+            <input type="datetime-local" name="kickoff_at" value="{{ form.kickoff_at }}" required>
+          </td>
+        </tr>
+        <tr>
+          <th>Status *</th>
+          <td>
+            <select name="status" required>
+              {% for option in status_options %}
+                <option value="{{ option }}" {% if form.status == option %}selected{% endif %}>
+                  {{ option }}
+                </option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <th>Competition *</th>
+          <td>
+            <select name="competition_id" required>
+              <option value="">-- Select competition --</option>
+              {% for competition in competitions %}
+                <option value="{{ competition.id }}" {% if form.competition_id == competition.id|string %}selected{% endif %}>
+                  {{ competition.name }} ({{ competition.sport.name }})
+                </option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <th>Stage (optional)</th>
+          <td>
+            <select name="stage_id">
+              <option value="">-- No stage --</option>
+              {% for stage in stages %}
+                <option value="{{ stage.id }}" {% if form.stage_id == stage.id|string %}selected{% endif %}>
+                  {{ stage.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <th>Home Team *</th>
+          <td>
+            <select name="home_team_id" required>
+              <option value="">-- Select home team --</option>
+              {% for team in teams %}
+                <option value="{{ team.id }}" {% if form.home_team_id == team.id|string %}selected{% endif %}>
+                  {{ team.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <th>Away Team *</th>
+          <td>
+            <select name="away_team_id" required>
+              <option value="">-- Select away team --</option>
+              {% for team in teams %}
+                <option value="{{ team.id }}" {% if form.away_team_id == team.id|string %}selected{% endif %}>
+                  {{ team.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <th>Venue *</th>
+          <td>
+            <select name="venue_id" required>
+              <option value="">-- Select venue --</option>
+              {% for venue in venues %}
+                <option value="{{ venue.id }}" {% if form.venue_id == venue.id|string %}selected{% endif %}>
+                  {% if venue.name %}
+                    {{ venue.name }}
+                  {% elif venue.city or venue.country %}
+                    {{ venue.city or "Unknown city" }}, {{ venue.country or "Unknown country" }}
+                  {% else %}
+                    Venue {{ venue.id }}
+                  {% endif %}
+                </option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <th>Home Goals (optional)</th>
+          <td>
+            <input type="number" name="home_goals" min="0" value="{{ form.home_goals }}">
+          </td>
+        </tr>
+        <tr>
+          <th>Away Goals (optional)</th>
+          <td>
+            <input type="number" name="away_goals" min="0" value="{{ form.away_goals }}">
+          </td>
+        </tr>
+        <tr>
+          <th>Description (optional)</th>
+          <td>
+            <textarea name="description" rows="4" style="width: 100%;">{{ form.description }}</textarea>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="margin-top: 12px; display: flex; gap: 10px;">
+      <button type="submit">Create Event</button>
+      <a href="{{ url_for('list_events') }}">Cancel</a>
+    </div>
+  </form>
+{% endblock %}
