@@ -12,6 +12,8 @@ This project implements a minimal backend-first sports event calendar that suppo
 
 The focus is on clear relational modeling, efficient event queries, and simple interview-friendly code.
 
+This is a backend-first assignment implementation, so the UI is intentionally minimal and focused on demonstrating relational modeling, query efficiency, and clear request handling.
+
 ## Features Implemented
 
 - Relational schema design with normalized entities (`sports`, `competitions`, `stages`, `teams`, `venues`, `events`)
@@ -24,9 +26,12 @@ The focus is on clear relational modeling, efficient event queries, and simple i
   - optional JSON import support (if a local JSON file is available)
   - built-in fallback sample dataset for demo use
 - Event list page (`GET /events`) with eager loading and kickoff-time sorting
+- Optional list filters for `sport` and `status` via query parameters
 - Event detail page (`GET /events/<id>`)
 - Event creation page (`GET/POST /events/new`) with simple validation
 - Shared base template and consistent navigation
+- Custom 404 page for missing routes and missing event detail pages
+- Minimal automated test suite (`unittest` + Flask test client) for routes, create validation, and seed idempotency
 
 ## Tech Stack
 
@@ -45,14 +50,19 @@ The focus is on clear relational modeling, efficient event queries, and simple i
 |-- init_db.py
 |-- seed_data.py
 |-- requirements.txt
+|-- README.md
+|-- AI_Reflection.txt
 |-- docs/
 |   |-- ERD.md
 |   `-- erd.mmd
+|-- tests/
+|   `-- test_app.py
 |-- templates/
 |   |-- base.html
 |   |-- events_list.html
 |   |-- event_detail.html
-|   `-- event_form.html
+|   |-- event_form.html
+|   `-- 404.html
 `-- materials/
     `-- assignment source PDFs
 ```
@@ -150,6 +160,10 @@ python -m unittest discover -s tests -v
 
 - `GET /events`  
   Event list page (ordered by kickoff time).  
+  Supports optional filters:
+  - `GET /events?sport=Football`
+  - `GET /events?status=scheduled`
+  - combined filters are supported  
   Uses eager loading (`joinedload`) to avoid N+1 query issues.
 
 - `GET /events/<event_id>`  
@@ -161,6 +175,20 @@ python -m unittest discover -s tests -v
 
 - `POST /events/new`  
   Creates a new event and redirects to detail page on success.
+
+## Technical Decisions and Trade-offs
+
+- SQLite was chosen for assignment scope: fast local setup, no external service dependency, and easy reproducibility.  
+  Trade-off: not aimed at high-concurrency production workloads.
+
+- The schema is split into related tables (`sports`, `competitions`, `stages`, `teams`, `venues`, `events`) to stay close to 3NF, avoid redundancy, and keep referential integrity explicit.  
+  Trade-off: more joins compared with a denormalized single table.
+
+- `joinedload(...)` is used in event list/detail queries to avoid N+1 behavior during template rendering and keep query count predictable.
+
+- The seed script is idempotent in normal use so setup can be repeated safely during local development/demo without creating duplicate event rows.
+
+- UTC is the working time assumption: kickoff values are treated and displayed in UTC in this project; per-user timezone conversion is intentionally out of scope.
 
 ## Assumptions and Key Decisions
 
