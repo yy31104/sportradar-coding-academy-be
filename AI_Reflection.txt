@@ -10,11 +10,13 @@ Why I used a step-by-step workflow
 Where AI helped most
 - Project structure planning and sequencing of tasks.
 - ERD drafting and turning the schema into SQLAlchemy models.
-- Seed script scaffolding (JSON candidate loading + fallback dataset).
+- Seed script scaffolding (JSON candidate loading + fallback dataset), then extending mapping for official Sportradar-style JSON fields.
 - Route and template scaffolding for:
   - GET /events
   - GET /events/<id>
   - GET/POST /events/new
+  - GET/POST /events/<id>/edit
+  - POST /events/<id>/delete
 
 What I verified manually
 - I ran the app locally and tested end-to-end flow with:
@@ -25,12 +27,14 @@ What I verified manually
   - events list renders correctly
   - event detail works and returns 404 for missing IDs
   - event creation validates input and redirects correctly
+  - event edit pre-fills values and updates records correctly
+  - event delete removes records and returns to the events list
 - I also verified event creation end-to-end by submitting the form and confirming that a new event was created, redirected to its detail page, and visible in the events list.
+- I also verified that status/date/score consistency rules are enforced in create/edit flows.
 - I checked that repeated seed runs do not duplicate data in normal usage.
 - I reviewed commit history and kept commits task-oriented.
 
 What I corrected/refined
-- I rejected "step-number" style commit messages and rewrote them to natural, professional task-based messages.
 - I refined navigation by removing misleading placeholder links once real routes existed.
 - I reviewed generated template/content wording to keep UI minimal and consistent.
 - I also adjusted schema and UI details during review, such as keeping nullable fields for incomplete real-world data and refining fallback handling for missing stage or venue information.
@@ -44,8 +48,12 @@ Concrete technical review examples
 - For event listing and detail, I ensured eager loading with joinedload(...) for related entities (competition->sport, stage, teams, venue).
 - This avoids N+1 query behavior and keeps template rendering efficient.
 
+3) Data import compatibility
+- I reviewed and refined seed mapping so official Sportradar-style input can be normalized into the current schema without changing table design.
+- I kept fallback data and idempotent seed behavior unchanged for reliable local demos.
+
 How I ensured I can stand behind the final code
 - I did not accept outputs blindly; I reviewed logic, naming, and runtime behavior after each step.
 - I validated the key design choices against assignment constraints (simple architecture, relational DB, efficient get events query, interview-friendly code).
-- I verified the main user flow locally, including seeding data, listing events, opening event details, and creating a new event successfully.
+- I verified the main user flow locally, including seeding data, listing events, opening event details, creating events, editing events, and deleting events successfully.
 - The final code, schema, and behavior were reviewed by me step by step, and I am comfortable explaining and defending the final implementation choices.

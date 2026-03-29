@@ -9,6 +9,8 @@ This project implements a minimal backend-first sports event calendar that suppo
 - listing events
 - viewing one event
 - adding a new event
+- editing an existing event (optional)
+- deleting an event intentionally from detail page (optional)
 
 The focus is on clear relational modeling, efficient event queries, and simple interview-friendly code.
 
@@ -24,14 +26,18 @@ This is a backend-first assignment implementation, so the UI is intentionally mi
 - Database initialization script
 - Seed script with:
   - optional JSON import support (if a local JSON file is available)
+  - compatibility mapping for official Sportradar-style JSON fields (`data`, `originCompetitionName`, `dateVenue`, `timeVenueUTC`, nested `homeTeam`/`awayTeam`, nested `result`)
   - built-in fallback sample dataset for demo use
 - Event list page (`GET /events`) with eager loading and kickoff-time sorting
 - Optional list filters for `sport` and `status` via query parameters
 - Event detail page (`GET /events/<id>`)
 - Event creation page (`GET/POST /events/new`) with simple validation
+- Event update page (`GET/POST /events/<id>/edit`) reusing the same validation rules
+- Event remove action (`POST /events/<id>/delete`) from the detail page
+- Status/time/score consistency validation for create and edit flows
 - Shared base template and consistent navigation
 - Custom 404 page for missing routes and missing event detail pages
-- Minimal automated test suite (`unittest` + Flask test client) for routes, create validation, and seed idempotency
+- Minimal automated test suite (`unittest` + Flask test client) for routes, create/edit/delete flows, validation rules, and seed idempotency
 
 ## Tech Stack
 
@@ -176,6 +182,15 @@ python -m unittest discover -s tests -v
 - `POST /events/new`  
   Creates a new event and redirects to detail page on success.
 
+- `GET /events/<event_id>/edit`  
+  Event edit form page with prefilled values.
+
+- `POST /events/<event_id>/edit`  
+  Updates an event and redirects to detail page on success.
+
+- `POST /events/<event_id>/delete`  
+  Deletes an event and redirects to `/events`.
+
 ## Technical Decisions and Trade-offs
 
 - SQLite was chosen for assignment scope: fast local setup, no external service dependency, and easy reproducibility.  
@@ -199,5 +214,6 @@ python -m unittest discover -s tests -v
   - valid IDs
   - different home/away teams
   - valid datetime and non-negative integer scores
+  - status/time/score consistency (for example: `finished` requires scores, `scheduled` cannot include scores)
 - Query efficiency was prioritized for event listing and detail rendering through relationship eager loading.
 - UI is intentionally minimal to keep the implementation easy to explain in an interview.
