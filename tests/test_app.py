@@ -148,6 +148,25 @@ class EventAppTestCase(unittest.TestCase):
         self.assertEqual(updated.description, "edited event description")
         self.assertEqual(updated.status, "scheduled")
 
+    def test_delete_event_removes_record_and_redirects_to_events_list(self):
+        event_id = self._first_event_id()
+        with self.app.app_context():
+            before_count = Event.query.count()
+
+        response = self.client.post(f"/events/{event_id}/delete", follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/events", response.headers.get("Location", ""))
+
+        with self.app.app_context():
+            after_count = Event.query.count()
+            deleted = db.session.get(Event, event_id)
+        self.assertEqual(after_count, before_count - 1)
+        self.assertIsNone(deleted)
+
+    def test_delete_missing_event_returns_404(self):
+        response = self.client.post("/events/999999/delete", follow_redirects=False)
+        self.assertEqual(response.status_code, 404)
+
     def test_invalid_edit_same_home_away_shows_validation_and_does_not_update(self):
         event_id = self._first_event_id()
         payload = self._form_base_payload()

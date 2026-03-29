@@ -454,6 +454,16 @@ def create_app(test_config: dict | None = None) -> Flask:
             event_id=event.id,
         )
 
+    @app.post("/events/<int:event_id>/delete")
+    def delete_event(event_id: int):
+        event = db.session.get(Event, event_id)
+        if event is None:
+            abort(404, description=f"Event with id {event_id} was not found.")
+
+        db.session.delete(event)
+        db.session.commit()
+        return redirect(url_for("list_events"))
+
     @app.errorhandler(404)
     def not_found(error):
         message = getattr(error, "description", "The page you are looking for was not found.")
