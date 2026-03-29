@@ -16,6 +16,31 @@ JSON_CANDIDATES = (
     Path("sportData.json"),
 )
 
+STATUS_NORMALIZATION = {
+    "played": "finished",
+    "complete": "finished",
+    "completed": "finished",
+    "in_progress": "live",
+    "ongoing": "live",
+    "canceled": "cancelled",
+}
+
+SPORT_KEYS = ("sport", "sport_name", "sportName")
+COMPETITION_KEYS = (
+    "competition",
+    "competition_name",
+    "competitionName",
+    "league",
+    "originCompetitionName",
+)
+STAGE_KEYS = ("stage", "stage_name", "stageName", "round")
+HOME_TEAM_KEYS = ("home_team", "homeTeam", "home", "team1", "participant1")
+AWAY_TEAM_KEYS = ("away_team", "awayTeam", "away", "team2", "participant2")
+VENUE_KEYS = ("venue", "venue_name", "venueName", "stadium")
+KICKOFF_KEYS = ("kickoff_at", "kickoff", "start_time", "startTime", "scheduled", "datetime", "date_time")
+HOME_GOALS_KEYS = ("home_goals", "homeGoals", "home_score", "homeScore")
+AWAY_GOALS_KEYS = ("away_goals", "awayGoals", "away_score", "awayScore")
+
 FALLBACK_EVENTS = [
     {
         "sport": "Football",
@@ -108,6 +133,59 @@ def normalize_name(value: Any) -> str | None:
     return text or None
 
 
+def infer_sport_name(raw: dict[str, Any]) -> str | None:
+    sport_name = normalize_name(first_present(raw, SPORT_KEYS))
+    if sport_name is not None:
+        return sport_name
+
+    if first_present(raw, ("originCompetitionName", "originCompetitionId")) is not None:
+        # Assumption for official Sportradar sample: if sport is omitted, treat dataset as football.
+        return "Football"
+    return None
+
+
+def normalize_status(raw: dict[str, Any]) -> str:
+    status_raw = normalize_name(first_present(raw, ("status",))) or "scheduled"
+    return STATUS_NORMALIZATION.get(status_raw.lower(), status_raw.lower())
+
+
+def extract_venue_fields(raw: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
+    venue_value = first_present(raw, VENUE_KEYS)
+    venue_name = normalize_name(venue_value)
+    venue_city = None
+    venue_country = None
+    if isinstance(venue_value, dict):
+        venue_city = normalize_name(first_present(venue_value, ("city",)))
+        venue_country = normalize_name(first_present(venue_value, ("country",)))
+    return venue_name, venue_city, venue_country
+
+
+def build_kickoff_raw(raw: dict[str, Any]) -> Any:
+    kickoff_raw = first_present(raw, KICKOFF_KEYS)
+    if kickoff_raw is not None:
+        return kickoff_raw
+
+    date_venue = normalize_name(first_present(raw, ("dateVenue", "date_venue")))
+    time_venue_utc = normalize_name(first_present(raw, ("timeVenueUTC", "time_venue_utc")))
+    if date_venue:
+        return f"{date_venue} {time_venue_utc}" if time_venue_utc else date_venue
+    return None
+
+
+def extract_goal_values(raw: dict[str, Any]) -> tuple[Any, Any]:
+    home_goals_value = first_present(raw, HOME_GOALS_KEYS)
+    away_goals_value = first_present(raw, AWAY_GOALS_KEYS)
+
+    result_data = first_present(raw, ("result",))
+    if isinstance(result_data, dict):
+        if home_goals_value is None:
+            home_goals_value = first_present(result_data, ("homeGoals", "home_goals"))
+        if away_goals_value is None:
+            away_goals_value = first_present(result_data, ("awayGoals", "away_goals"))
+
+    return home_goals_value, away_goals_value
+
+
 def parse_kickoff(value: Any) -> datetime:
     if isinstance(value, datetime):
         dt = value
@@ -154,35 +232,22 @@ def extract_events_payload(payload: Any) -> list[dict[str, Any]]:
 
 
 def normalize_event(raw: dict[str, Any]) -> dict[str, Any]:
-    sport_name = normalize_name(first_present(raw, ("sport", "sport_name", "sportName")))
-    competition_name = normalize_name(
-        first_present(raw, ("competition", "competition_name", "competitionName", "league"))
-    )
-    stage_name = normalize_name(first_present(raw, ("stage", "stage_name", "stageName", "round")))
-    home_team_name = normalize_name(
-        first_present(raw, ("home_team", "homeTeam", "home", "team1", "participant1"))
-    )
-    away_team_name = normalize_name(
-        first_present(raw, ("away_team", "awayTeam", "away", "team2", "participant2"))
-    )
+    sport_name = infer_sport_name(raw)
+    competition_name = normalize_name(first_present(raw, COMPETITION_KEYS))
+    stage_name = normalize_name(first_present(raw, STAGE_KEYS))
+    home_team_name = normalize_name(first_present(raw, HOME_TEAM_KEYS))
+    away_team_name = normalize_name(first_present(raw, AWAY_TEAM_KEYS))
 
-    venue_value = first_present(raw, ("venue", "venue_name", "venueName", "stadium"))
-    venue_name = normalize_name(venue_value)
-    venue_city = None
-    venue_country = None
-    if isinstance(venue_value, dict):
-        venue_city = normalize_name(first_present(venue_value, ("city",)))
-        venue_country = normalize_name(first_present(venue_value, ("country",)))
+    venue_name, venue_city, venue_country = extract_venue_fields(raw)
+    status = normalize_status(raw)
 
-    status = normalize_name(first_present(raw, ("status",))) or "scheduled"
-    kickoff_raw = first_present(
-        raw,
-        ("kickoff_at", "kickoff", "start_time", "startTime", "scheduled", "datetime", "date_time"),
-    )
+    kickoff_raw = build_kickoff_raw(raw)
     kickoff_at = parse_kickoff(kickoff_raw)
 
-    home_goals = parse_int_or_none(first_present(raw, ("home_goals", "homeGoals", "home_score", "homeScore")))
-    away_goals = parse_int_or_none(first_present(raw, ("away_goals", "awayGoals", "away_score", "awayScore")))
+    home_goals_value, away_goals_value = extract_goal_values(raw)
+
+    home_goals = parse_int_or_none(home_goals_value)
+    away_goals = parse_int_or_none(away_goals_value)
     description = normalize_name(first_present(raw, ("description", "notes")))
 
     required_values = {

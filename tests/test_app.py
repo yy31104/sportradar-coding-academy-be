@@ -1,5 +1,7 @@
+import json
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy.exc import IntegrityError
@@ -52,7 +54,7 @@ class EventAppTestCase(unittest.TestCase):
             self.assertIsNotNone(venue)
 
             return {
-                "kickoff_at": "2026-06-01T19:30",
+                "kickoff_at": self._datetime_local_from_now(timedelta(days=1)),
                 "status": "scheduled",
                 "competition_id": str(competition.id),
                 "stage_id": "",
@@ -63,6 +65,20 @@ class EventAppTestCase(unittest.TestCase):
                 "away_goals": "",
                 "description": "test-created event",
             }
+
+    def _datetime_local_from_now(self, delta: timedelta) -> str:
+        dt = datetime.utcnow() + delta
+        dt = dt.replace(second=0, microsecond=0)
+        return dt.strftime("%Y-%m-%dT%H:%M")
+
+    def _seed_from_json_payload(self, payload: dict) -> None:
+        json_path = Path(self.temp_dir.name) / "official_events.json"
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with self.app.app_context():
+            db.drop_all()
+            db.create_all()
+            seed_database(explicit_json_path=str(json_path), app=self.app)
 
     def test_get_events_returns_200(self):
         response = self.client.get("/events")
@@ -120,6 +136,114 @@ class EventAppTestCase(unittest.TestCase):
         self.assertIn("Away team is required.", html)
         self.assertIn("Venue is required.", html)
 
+    def test_invalid_scheduled_in_past_shows_validation_error(self):
+        payload = self._form_base_payload()
+        payload["kickoff_at"] = self._datetime_local_from_now(timedelta(hours=-1))
+        payload["status"] = "scheduled"
+
+        with self.app.app_context():
+            before_count = Event.query.count()
+
+        response = self.client.post("/events/new", data=payload, follow_redirects=True)
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("A scheduled event must have a future kickoff date/time.", html)
+
+        with self.app.app_context():
+            after_count = Event.query.count()
+        self.assertEqual(after_count, before_count)
+
+    def test_invalid_finished_in_future_shows_validation_error(self):
+        payload = self._form_base_payload()
+        payload["kickoff_at"] = self._datetime_local_from_now(timedelta(hours=2))
+        payload["status"] = "finished"
+        payload["home_goals"] = "1"
+        payload["away_goals"] = "0"
+
+        with self.app.app_context():
+            before_count = Event.query.count()
+
+        response = self.client.post("/events/new", data=payload, follow_redirects=True)
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("A finished event cannot have a future kickoff date/time.", html)
+
+        with self.app.app_context():
+            after_count = Event.query.count()
+        self.assertEqual(after_count, before_count)
+
+    def test_invalid_finished_without_scores_shows_validation_error(self):
+        payload = self._form_base_payload()
+        payload["kickoff_at"] = self._datetime_local_from_now(timedelta(hours=-1))
+        payload["status"] = "finished"
+
+        with self.app.app_context():
+            before_count = Event.query.count()
+
+        response = self.client.post("/events/new", data=payload, follow_redirects=True)
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Finished events must include both home and away goals.", html)
+
+        with self.app.app_context():
+            after_count = Event.query.count()
+        self.assertEqual(after_count, before_count)
+
+    def test_invalid_scheduled_with_scores_shows_validation_error(self):
+        payload = self._form_base_payload()
+        payload["kickoff_at"] = self._datetime_local_from_now(timedelta(hours=2))
+        payload["status"] = "scheduled"
+        payload["home_goals"] = "2"
+        payload["away_goals"] = "1"
+
+        with self.app.app_context():
+            before_count = Event.query.count()
+
+        response = self.client.post("/events/new", data=payload, follow_redirects=True)
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Scheduled events should not include scores.", html)
+
+        with self.app.app_context():
+            after_count = Event.query.count()
+        self.assertEqual(after_count, before_count)
+
+    def test_invalid_live_too_far_in_past_shows_validation_error(self):
+        payload = self._form_base_payload()
+        payload["kickoff_at"] = self._datetime_local_from_now(timedelta(hours=-5))
+        payload["status"] = "live"
+
+        with self.app.app_context():
+            before_count = Event.query.count()
+
+        response = self.client.post("/events/new", data=payload, follow_redirects=True)
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("A live event cannot be too far in the past.", html)
+
+        with self.app.app_context():
+            after_count = Event.query.count()
+        self.assertEqual(after_count, before_count)
+
+    def test_invalid_one_sided_score_pair_shows_validation_error(self):
+        payload = self._form_base_payload()
+        payload["kickoff_at"] = self._datetime_local_from_now(timedelta(days=1))
+        payload["status"] = "scheduled"
+        payload["home_goals"] = "1"
+        payload["away_goals"] = ""
+
+        with self.app.app_context():
+            before_count = Event.query.count()
+
+        response = self.client.post("/events/new", data=payload, follow_redirects=True)
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Scores must include both home and away goals, or neither.", html)
+
+        with self.app.app_context():
+            after_count = Event.query.count()
+        self.assertEqual(after_count, before_count)
+
     def test_repeated_seed_does_not_duplicate_events_in_normal_use(self):
         with self.app.app_context():
             initial_count = Event.query.count()
@@ -147,6 +271,56 @@ class EventAppTestCase(unittest.TestCase):
             with self.assertRaises(IntegrityError):
                 db.session.commit()
             db.session.rollback()
+
+    def test_official_sportradar_json_mapping_is_supported(self):
+        sample_payload = {
+            "data": [
+                {
+                    "season": 2024,
+                    "status": "played",
+                    "timeVenueUTC": "00:00:00",
+                    "dateVenue": "2024-01-03",
+                    "stadium": None,
+                    "homeTeam": {"name": "Al Shabab"},
+                    "awayTeam": {"name": "Nasaf"},
+                    "result": {"homeGoals": 1, "awayGoals": 2},
+                    "stage": {"id": "ROUND OF 16", "name": "ROUND OF 16"},
+                    "originCompetitionId": "afc-champions-league",
+                    "originCompetitionName": "AFC Champions League",
+                },
+                {
+                    "season": 2024,
+                    "status": "scheduled",
+                    "timeVenueUTC": "00:00:00",
+                    "dateVenue": "2024-01-19",
+                    "stadium": None,
+                    "homeTeam": None,
+                    "awayTeam": {"name": "Urawa Reds"},
+                    "result": None,
+                    "stage": {"id": "FINAL", "name": "FINAL"},
+                    "originCompetitionId": "afc-champions-league",
+                    "originCompetitionName": "AFC Champions League",
+                },
+            ]
+        }
+
+        self._seed_from_json_payload(sample_payload)
+
+        with self.app.app_context():
+            events = Event.query.order_by(Event.id.asc()).all()
+            self.assertEqual(len(events), 1)
+
+            event = events[0]
+            self.assertEqual(event.status, "finished")
+            self.assertEqual(event.home_goals, 1)
+            self.assertEqual(event.away_goals, 2)
+            self.assertEqual(event.competition.name, "AFC Champions League")
+            self.assertEqual(event.stage.name, "ROUND OF 16")
+            self.assertEqual(event.home_team.name, "Al Shabab")
+            self.assertEqual(event.away_team.name, "Nasaf")
+            self.assertEqual(event.competition.sport.name, "Football")
+            self.assertEqual(event.kickoff_at.strftime("%Y-%m-%d %H:%M:%S"), "2024-01-03 00:00:00")
+            self.assertIsNone(event.venue.name)
 
 
 if __name__ == "__main__":

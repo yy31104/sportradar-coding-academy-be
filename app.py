@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Flask, abort, redirect, render_template, request, url_for
 from sqlalchemy.exc import OperationalError
@@ -10,6 +10,47 @@ from models import Competition, Event, Sport, Stage, Team, Venue, db
 BASE_DIR = Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / "instance"
 DATABASE_PATH = INSTANCE_DIR / "events.db"
+LIVE_PAST_WINDOW = timedelta(hours=4)
+LIVE_FUTURE_GRACE = timedelta(minutes=15)
+
+
+def validate_score_pair(home_goals: int | None, away_goals: int | None) -> list[str]:
+    if (home_goals is None) != (away_goals is None):
+        return ["Scores must include both home and away goals, or neither."]
+    return []
+
+
+def validate_event_status_rules(
+    kickoff_at: datetime,
+    status: str,
+    home_goals: int | None,
+    away_goals: int | None,
+) -> list[str]:
+    errors = []
+    now = datetime.utcnow()
+    has_scores = home_goals is not None or away_goals is not None
+
+    errors.extend(validate_score_pair(home_goals, away_goals))
+
+    if status == "scheduled":
+        if kickoff_at <= now:
+            errors.append("A scheduled event must have a future kickoff date/time.")
+        if has_scores:
+            errors.append("Scheduled events should not include scores.")
+    elif status == "live":
+        if kickoff_at < now - LIVE_PAST_WINDOW:
+            errors.append("A live event cannot be too far in the past.")
+        if kickoff_at > now + LIVE_FUTURE_GRACE:
+            errors.append("A live event cannot be too far in the future.")
+    elif status == "finished":
+        if kickoff_at > now:
+            errors.append("A finished event cannot have a future kickoff date/time.")
+        if home_goals is None or away_goals is None:
+            errors.append("Finished events must include both home and away goals.")
+    elif status in {"postponed", "cancelled"} and has_scores:
+        errors.append(f"{status.capitalize()} events should not include scores.")
+
+    return errors
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -217,6 +258,16 @@ def create_app(test_config: dict | None = None) -> Flask:
                         errors.append("Away goals cannot be negative.")
                 except ValueError:
                     errors.append("Away goals must be an integer.")
+
+            if kickoff_at is not None and form_data["status"] in status_options:
+                errors.extend(
+                    validate_event_status_rules(
+                        kickoff_at=kickoff_at,
+                        status=form_data["status"],
+                        home_goals=home_goals,
+                        away_goals=away_goals,
+                    )
+                )
 
             competition = db.session.get(Competition, competition_id) if competition_id else None
             stage = db.session.get(Stage, stage_id) if stage_id else None
