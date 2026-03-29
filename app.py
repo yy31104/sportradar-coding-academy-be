@@ -5,7 +5,7 @@ from flask import Flask, abort, redirect, render_template, request, url_for
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import joinedload
 
-from models import Competition, Event, Stage, Team, Venue, db
+from models import Competition, Event, Sport, Stage, Team, Venue, db
 
 BASE_DIR = Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / "instance"
@@ -33,26 +33,61 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.get("/events")
     def list_events():
         warning = None
+        selected_sport = request.args.get("sport", "").strip()
+        selected_status = request.args.get("status", "").strip().lower()
         try:
-            events = (
-                Event.query.options(
-                    joinedload(Event.competition).joinedload(Competition.sport),
-                    joinedload(Event.stage),
-                    joinedload(Event.home_team),
-                    joinedload(Event.away_team),
-                    joinedload(Event.venue),
+            query = Event.query.options(
+                joinedload(Event.competition).joinedload(Competition.sport),
+                joinedload(Event.stage),
+                joinedload(Event.home_team),
+                joinedload(Event.away_team),
+                joinedload(Event.venue),
+            )
+
+            if selected_sport:
+                query = query.join(Event.competition).join(Competition.sport).filter(
+                    Sport.name == selected_sport
                 )
+            if selected_status:
+                query = query.filter(Event.status == selected_status)
+
+            events = (
+                query
                 .order_by(Event.kickoff_at.asc())
                 .all()
             )
+
+            sport_options = [
+                row[0]
+                for row in db.session.query(Sport.name)
+                .order_by(Sport.name.asc())
+                .all()
+            ]
+            status_options = [
+                row[0]
+                for row in db.session.query(Event.status)
+                .distinct()
+                .order_by(Event.status.asc())
+                .all()
+            ]
         except OperationalError:
             events = []
+            sport_options = []
+            status_options = []
             warning = (
                 "Database is not initialized yet. Run `python init_db.py` and "
                 "`python seed_data.py`, then refresh this page."
             )
 
-        return render_template("events_list.html", events=events, warning=warning)
+        return render_template(
+            "events_list.html",
+            events=events,
+            warning=warning,
+            sport_options=sport_options,
+            status_options=status_options,
+            selected_sport=selected_sport,
+            selected_status=selected_status,
+        )
 
     @app.get("/events/<int:event_id>")
     def event_detail(event_id: int):

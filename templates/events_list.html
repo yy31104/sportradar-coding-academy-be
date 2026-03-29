@@ -9,6 +9,31 @@
     <a href="{{ url_for('create_event') }}">Add a new event</a>.
   </p>
 
+  <form method="get" action="{{ url_for('list_events') }}" class="card" style="padding: 12px; margin-bottom: 14px;">
+    <label for="sport" class="small">Sport</label>
+    <select id="sport" name="sport" style="margin-right: 10px;">
+      <option value="">All</option>
+      {% for sport_name in sport_options %}
+        <option value="{{ sport_name }}" {% if selected_sport == sport_name %}selected{% endif %}>
+          {{ sport_name }}
+        </option>
+      {% endfor %}
+    </select>
+
+    <label for="status" class="small">Status</label>
+    <select id="status" name="status" style="margin-right: 10px;">
+      <option value="">All</option>
+      {% for status_value in status_options %}
+        <option value="{{ status_value }}" {% if selected_status == status_value %}selected{% endif %}>
+          {{ status_value }}
+        </option>
+      {% endfor %}
+    </select>
+
+    <button type="submit">Apply</button>
+    <a href="{{ url_for('list_events') }}" style="margin-left: 8px;">Clear</a>
+  </form>
+
   {% if warning %}
     <div class="warning">{{ warning }}</div>
   {% endif %}
