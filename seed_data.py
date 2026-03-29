@@ -340,9 +340,9 @@ def upsert_event(
     return False
 
 
-def seed_database(explicit_json_path: str | None = None) -> None:
-    app = create_app()
-    with app.app_context():
+def seed_database(explicit_json_path: str | None = None, app=None) -> None:
+    app_obj = app or create_app()
+    with app_obj.app_context():
         db.create_all()
 
         rows, source_label = load_event_rows(explicit_json_path)

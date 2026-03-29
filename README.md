@@ -128,6 +128,18 @@ Open in browser:
 
 - `http://127.0.0.1:5000/events`
 
+## Run Tests
+
+```powershell
+python -m unittest -v tests.test_app
+```
+
+or:
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
 ## Main Routes
 
 - `GET /`  
