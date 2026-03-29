@@ -1,10 +1,22 @@
 {% extends "base.html" %}
 
-{% block title %}Add Event | Sports Event Calendar{% endblock %}
+{% block title %}
+  {% if form_mode == "edit" %}
+    Edit Event #{{ event_id }} | Sports Event Calendar
+  {% else %}
+    Add Event | Sports Event Calendar
+  {% endif %}
+{% endblock %}
 
 {% block content %}
-  <h1>Add Event</h1>
-  <p class="small">Create a new event using existing competition, team, stage, and venue records.</p>
+  <h1>{% if form_mode == "edit" %}Edit Event{% else %}Add Event{% endif %}</h1>
+  <p class="small">
+    {% if form_mode == "edit" %}
+      Update an existing event using competition, team, stage, and venue records.
+    {% else %}
+      Create a new event using existing competition, team, stage, and venue records.
+    {% endif %}
+  </p>
 
   {% if errors %}
     <div class="error-box" role="alert" aria-live="polite">
@@ -131,8 +143,8 @@
     </table>
 
     <div style="margin-top: 12px; display: flex; gap: 10px;">
-      <button type="submit">Create Event</button>
-      <a href="{{ url_for('list_events') }}">Cancel</a>
+      <button type="submit">{% if form_mode == "edit" %}Save Changes{% else %}Create Event{% endif %}</button>
+      <a href="{% if form_mode == 'edit' %}{{ url_for('event_detail', event_id=event_id) }}{% else %}{{ url_for('list_events') }}{% endif %}">Cancel</a>
     </div>
   </form>
 {% endblock %}

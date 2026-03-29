@@ -93,6 +93,22 @@ class EventAppTestCase(unittest.TestCase):
         response = self.client.get("/events/999999")
         self.assertEqual(response.status_code, 404)
 
+    def test_get_edit_existing_event_returns_200_with_prefilled_values(self):
+        event_id = self._first_event_id()
+        with self.app.app_context():
+            event = db.session.get(Event, event_id)
+            kickoff_value = event.kickoff_at.strftime("%Y-%m-%dT%H:%M")
+
+        response = self.client.get(f"/events/{event_id}/edit")
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Edit Event", html)
+        self.assertIn(kickoff_value, html)
+
+    def test_get_missing_edit_event_returns_404(self):
+        response = self.client.get("/events/999999/edit")
+        self.assertEqual(response.status_code, 404)
+
     def test_valid_event_creation_creates_new_event_and_redirects(self):
         payload = self._form_base_payload()
         with self.app.app_context():
@@ -110,6 +126,49 @@ class EventAppTestCase(unittest.TestCase):
         self.assertEqual(after_count, before_count + 1)
         self.assertIsNotNone(created_event)
         self.assertEqual(created_event.description, "test-created event")
+
+    def test_valid_event_edit_updates_event_and_redirects(self):
+        event_id = self._first_event_id()
+        payload = self._form_base_payload()
+        payload["description"] = "edited event description"
+        payload["status"] = "scheduled"
+        payload["kickoff_at"] = self._datetime_local_from_now(timedelta(days=2))
+
+        with self.app.app_context():
+            before_count = Event.query.count()
+
+        response = self.client.post(f"/events/{event_id}/edit", data=payload, follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(f"/events/{event_id}", response.headers.get("Location", ""))
+
+        with self.app.app_context():
+            after_count = Event.query.count()
+            updated = db.session.get(Event, event_id)
+        self.assertEqual(after_count, before_count)
+        self.assertEqual(updated.description, "edited event description")
+        self.assertEqual(updated.status, "scheduled")
+
+    def test_invalid_edit_same_home_away_shows_validation_and_does_not_update(self):
+        event_id = self._first_event_id()
+        payload = self._form_base_payload()
+        payload["away_team_id"] = payload["home_team_id"]
+        payload["description"] = "should not be saved"
+
+        with self.app.app_context():
+            before = db.session.get(Event, event_id)
+            before_home_team_id = before._home_team_id
+            before_away_team_id = before._away_team_id
+            before_description = before.description
+
+        response = self.client.post(f"/events/{event_id}/edit", data=payload, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("must be different", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            after = db.session.get(Event, event_id)
+        self.assertEqual(after._home_team_id, before_home_team_id)
+        self.assertEqual(after._away_team_id, before_away_team_id)
+        self.assertEqual(after.description, before_description)
 
     def test_invalid_same_home_away_shows_validation_and_does_not_create(self):
         payload = self._form_base_payload()

@@ -4,7 +4,10 @@
 
 {% block content %}
   <h1>Event Detail</h1>
-  <p class="small"><a href="{{ url_for('list_events') }}">Back to events</a></p>
+  <p class="small">
+    <a href="{{ url_for('list_events') }}">Back to events</a> |
+    <a href="{{ url_for('edit_event', event_id=event.id) }}">Edit this event</a>
+  </p>
 
   <div class="card">
     <table>

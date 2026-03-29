@@ -12,6 +12,7 @@ INSTANCE_DIR = BASE_DIR / "instance"
 DATABASE_PATH = INSTANCE_DIR / "events.db"
 LIVE_PAST_WINDOW = timedelta(hours=4)
 LIVE_FUTURE_GRACE = timedelta(minutes=15)
+EVENT_STATUS_OPTIONS = ["scheduled", "live", "finished", "postponed", "cancelled"]
 
 
 def validate_score_pair(home_goals: int | None, away_goals: int | None) -> list[str]:
@@ -62,6 +63,172 @@ def create_app(test_config: dict | None = None) -> Flask:
     if test_config:
         app.config.update(test_config)
     db.init_app(app)
+
+    def empty_form_data() -> dict[str, str]:
+        return {
+            "kickoff_at": "",
+            "status": "scheduled",
+            "competition_id": "",
+            "stage_id": "",
+            "home_team_id": "",
+            "away_team_id": "",
+            "venue_id": "",
+            "home_goals": "",
+            "away_goals": "",
+            "description": "",
+        }
+
+    def form_data_from_request() -> dict[str, str]:
+        return {
+            "kickoff_at": request.form.get("kickoff_at", "").strip(),
+            "status": request.form.get("status", "scheduled").strip().lower(),
+            "competition_id": request.form.get("competition_id", "").strip(),
+            "stage_id": request.form.get("stage_id", "").strip(),
+            "home_team_id": request.form.get("home_team_id", "").strip(),
+            "away_team_id": request.form.get("away_team_id", "").strip(),
+            "venue_id": request.form.get("venue_id", "").strip(),
+            "home_goals": request.form.get("home_goals", "").strip(),
+            "away_goals": request.form.get("away_goals", "").strip(),
+            "description": request.form.get("description", "").strip(),
+        }
+
+    def form_data_from_event(event: Event) -> dict[str, str]:
+        return {
+            "kickoff_at": event.kickoff_at.strftime("%Y-%m-%dT%H:%M"),
+            "status": event.status,
+            "competition_id": str(event._competition_id),
+            "stage_id": str(event._stage_id) if event._stage_id is not None else "",
+            "home_team_id": str(event._home_team_id),
+            "away_team_id": str(event._away_team_id),
+            "venue_id": str(event._venue_id),
+            "home_goals": str(event.home_goals) if event.home_goals is not None else "",
+            "away_goals": str(event.away_goals) if event.away_goals is not None else "",
+            "description": event.description or "",
+        }
+
+    def load_form_options() -> tuple[list[Competition], list[Stage], list[Team], list[Venue]]:
+        competitions = (
+            Competition.query.options(joinedload(Competition.sport))
+            .order_by(Competition.name.asc())
+            .all()
+        )
+        stages = Stage.query.order_by(Stage.name.asc()).all()
+        teams = Team.query.order_by(Team.name.asc()).all()
+        venues = Venue.query.order_by(Venue.name.asc()).all()
+        return competitions, stages, teams, venues
+
+    def parse_id(value: str, field_name: str, errors: list[str]) -> int | None:
+        if not value:
+            return None
+        try:
+            return int(value)
+        except ValueError:
+            errors.append(f"{field_name} must be a valid selection.")
+            return None
+
+    def validate_and_resolve_event_form(
+        form_data: dict[str, str],
+    ) -> tuple[
+        list[str],
+        datetime | None,
+        Competition | None,
+        Stage | None,
+        Team | None,
+        Team | None,
+        Venue | None,
+        int | None,
+        int | None,
+        str | None,
+    ]:
+        errors = []
+
+        if not form_data["kickoff_at"]:
+            errors.append("Kickoff date/time is required.")
+        if form_data["status"] not in EVENT_STATUS_OPTIONS:
+            errors.append("Status is invalid.")
+        if not form_data["competition_id"]:
+            errors.append("Competition is required.")
+        if not form_data["home_team_id"]:
+            errors.append("Home team is required.")
+        if not form_data["away_team_id"]:
+            errors.append("Away team is required.")
+        if not form_data["venue_id"]:
+            errors.append("Venue is required.")
+
+        kickoff_at = None
+        if form_data["kickoff_at"]:
+            try:
+                kickoff_at = datetime.fromisoformat(form_data["kickoff_at"])
+            except ValueError:
+                errors.append("Kickoff date/time format is invalid.")
+
+        competition_id = parse_id(form_data["competition_id"], "Competition", errors)
+        stage_id = parse_id(form_data["stage_id"], "Stage", errors) if form_data["stage_id"] else None
+        home_team_id = parse_id(form_data["home_team_id"], "Home team", errors)
+        away_team_id = parse_id(form_data["away_team_id"], "Away team", errors)
+        venue_id = parse_id(form_data["venue_id"], "Venue", errors)
+
+        if home_team_id is not None and away_team_id is not None and home_team_id == away_team_id:
+            errors.append("Home team and away team must be different.")
+
+        home_goals = None
+        away_goals = None
+        if form_data["home_goals"]:
+            try:
+                home_goals = int(form_data["home_goals"])
+                if home_goals < 0:
+                    errors.append("Home goals cannot be negative.")
+            except ValueError:
+                errors.append("Home goals must be an integer.")
+        if form_data["away_goals"]:
+            try:
+                away_goals = int(form_data["away_goals"])
+                if away_goals < 0:
+                    errors.append("Away goals cannot be negative.")
+            except ValueError:
+                errors.append("Away goals must be an integer.")
+
+        if kickoff_at is not None and form_data["status"] in EVENT_STATUS_OPTIONS:
+            errors.extend(
+                validate_event_status_rules(
+                    kickoff_at=kickoff_at,
+                    status=form_data["status"],
+                    home_goals=home_goals,
+                    away_goals=away_goals,
+                )
+            )
+
+        competition = db.session.get(Competition, competition_id) if competition_id else None
+        stage = db.session.get(Stage, stage_id) if stage_id else None
+        home_team = db.session.get(Team, home_team_id) if home_team_id else None
+        away_team = db.session.get(Team, away_team_id) if away_team_id else None
+        venue = db.session.get(Venue, venue_id) if venue_id else None
+
+        if competition_id and competition is None:
+            errors.append("Selected competition does not exist.")
+        if stage_id and stage is None:
+            errors.append("Selected stage does not exist.")
+        if home_team_id and home_team is None:
+            errors.append("Selected home team does not exist.")
+        if away_team_id and away_team is None:
+            errors.append("Selected away team does not exist.")
+        if venue_id and venue is None:
+            errors.append("Selected venue does not exist.")
+
+        description = form_data["description"] or None
+
+        return (
+            errors,
+            kickoff_at,
+            competition,
+            stage,
+            home_team,
+            away_team,
+            venue,
+            home_goals,
+            away_goals,
+            description,
+        )
 
     @app.get("/")
     def index():
@@ -151,28 +318,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/events/new", methods=["GET", "POST"])
     def create_event():
         errors = []
-        form_data = {
-            "kickoff_at": "",
-            "status": "scheduled",
-            "competition_id": "",
-            "stage_id": "",
-            "home_team_id": "",
-            "away_team_id": "",
-            "venue_id": "",
-            "home_goals": "",
-            "away_goals": "",
-            "description": "",
-        }
+        form_data = empty_form_data()
 
         try:
-            competitions = (
-                Competition.query.options(joinedload(Competition.sport))
-                .order_by(Competition.name.asc())
-                .all()
-            )
-            stages = Stage.query.order_by(Stage.name.asc()).all()
-            teams = Team.query.order_by(Team.name.asc()).all()
-            venues = Venue.query.order_by(Venue.name.asc()).all()
+            competitions, stages, teams, venues = load_form_options()
         except OperationalError:
             return (
                 render_template(
@@ -183,108 +332,27 @@ def create_app(test_config: dict | None = None) -> Flask:
                     stages=[],
                     teams=[],
                     venues=[],
-                    status_options=["scheduled", "live", "finished", "postponed", "cancelled"],
+                    status_options=EVENT_STATUS_OPTIONS,
+                    form_mode="create",
+                    event_id=None,
                 ),
                 503,
             )
 
-        status_options = ["scheduled", "live", "finished", "postponed", "cancelled"]
-
         if request.method == "POST":
-            form_data = {
-                "kickoff_at": request.form.get("kickoff_at", "").strip(),
-                "status": request.form.get("status", "scheduled").strip().lower(),
-                "competition_id": request.form.get("competition_id", "").strip(),
-                "stage_id": request.form.get("stage_id", "").strip(),
-                "home_team_id": request.form.get("home_team_id", "").strip(),
-                "away_team_id": request.form.get("away_team_id", "").strip(),
-                "venue_id": request.form.get("venue_id", "").strip(),
-                "home_goals": request.form.get("home_goals", "").strip(),
-                "away_goals": request.form.get("away_goals", "").strip(),
-                "description": request.form.get("description", "").strip(),
-            }
-
-            if not form_data["kickoff_at"]:
-                errors.append("Kickoff date/time is required.")
-            if form_data["status"] not in status_options:
-                errors.append("Status is invalid.")
-            if not form_data["competition_id"]:
-                errors.append("Competition is required.")
-            if not form_data["home_team_id"]:
-                errors.append("Home team is required.")
-            if not form_data["away_team_id"]:
-                errors.append("Away team is required.")
-            if not form_data["venue_id"]:
-                errors.append("Venue is required.")
-
-            kickoff_at = None
-            if form_data["kickoff_at"]:
-                try:
-                    kickoff_at = datetime.fromisoformat(form_data["kickoff_at"])
-                except ValueError:
-                    errors.append("Kickoff date/time format is invalid.")
-
-            def parse_id(value: str, field_name: str) -> int | None:
-                if not value:
-                    return None
-                try:
-                    return int(value)
-                except ValueError:
-                    errors.append(f"{field_name} must be a valid selection.")
-                    return None
-
-            competition_id = parse_id(form_data["competition_id"], "Competition")
-            stage_id = parse_id(form_data["stage_id"], "Stage") if form_data["stage_id"] else None
-            home_team_id = parse_id(form_data["home_team_id"], "Home team")
-            away_team_id = parse_id(form_data["away_team_id"], "Away team")
-            venue_id = parse_id(form_data["venue_id"], "Venue")
-
-            if home_team_id is not None and away_team_id is not None and home_team_id == away_team_id:
-                errors.append("Home team and away team must be different.")
-
-            home_goals = None
-            away_goals = None
-            if form_data["home_goals"]:
-                try:
-                    home_goals = int(form_data["home_goals"])
-                    if home_goals < 0:
-                        errors.append("Home goals cannot be negative.")
-                except ValueError:
-                    errors.append("Home goals must be an integer.")
-            if form_data["away_goals"]:
-                try:
-                    away_goals = int(form_data["away_goals"])
-                    if away_goals < 0:
-                        errors.append("Away goals cannot be negative.")
-                except ValueError:
-                    errors.append("Away goals must be an integer.")
-
-            if kickoff_at is not None and form_data["status"] in status_options:
-                errors.extend(
-                    validate_event_status_rules(
-                        kickoff_at=kickoff_at,
-                        status=form_data["status"],
-                        home_goals=home_goals,
-                        away_goals=away_goals,
-                    )
-                )
-
-            competition = db.session.get(Competition, competition_id) if competition_id else None
-            stage = db.session.get(Stage, stage_id) if stage_id else None
-            home_team = db.session.get(Team, home_team_id) if home_team_id else None
-            away_team = db.session.get(Team, away_team_id) if away_team_id else None
-            venue = db.session.get(Venue, venue_id) if venue_id else None
-
-            if competition_id and competition is None:
-                errors.append("Selected competition does not exist.")
-            if stage_id and stage is None:
-                errors.append("Selected stage does not exist.")
-            if home_team_id and home_team is None:
-                errors.append("Selected home team does not exist.")
-            if away_team_id and away_team is None:
-                errors.append("Selected away team does not exist.")
-            if venue_id and venue is None:
-                errors.append("Selected venue does not exist.")
+            form_data = form_data_from_request()
+            (
+                errors,
+                kickoff_at,
+                competition,
+                stage,
+                home_team,
+                away_team,
+                venue,
+                home_goals,
+                away_goals,
+                description,
+            ) = validate_and_resolve_event_form(form_data)
 
             if not errors:
                 event = Event(
@@ -297,7 +365,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     _venue_id=venue.id,
                     home_goals=home_goals,
                     away_goals=away_goals,
-                    description=form_data["description"] or None,
+                    description=description,
                 )
                 db.session.add(event)
                 db.session.commit()
@@ -311,7 +379,79 @@ def create_app(test_config: dict | None = None) -> Flask:
             stages=stages,
             teams=teams,
             venues=venues,
-            status_options=status_options,
+            status_options=EVENT_STATUS_OPTIONS,
+            form_mode="create",
+            event_id=None,
+        )
+
+    @app.route("/events/<int:event_id>/edit", methods=["GET", "POST"])
+    def edit_event(event_id: int):
+        event = db.session.get(Event, event_id)
+        if event is None:
+            abort(404, description=f"Event with id {event_id} was not found.")
+
+        errors = []
+        try:
+            competitions, stages, teams, venues = load_form_options()
+        except OperationalError:
+            return (
+                render_template(
+                    "event_form.html",
+                    errors=["Database is not initialized yet. Run `python init_db.py` first."],
+                    form=empty_form_data(),
+                    competitions=[],
+                    stages=[],
+                    teams=[],
+                    venues=[],
+                    status_options=EVENT_STATUS_OPTIONS,
+                    form_mode="edit",
+                    event_id=event.id,
+                ),
+                503,
+            )
+
+        if request.method == "POST":
+            form_data = form_data_from_request()
+            (
+                errors,
+                kickoff_at,
+                competition,
+                stage,
+                home_team,
+                away_team,
+                venue,
+                home_goals,
+                away_goals,
+                description,
+            ) = validate_and_resolve_event_form(form_data)
+
+            if not errors:
+                event.kickoff_at = kickoff_at
+                event.status = form_data["status"]
+                event._competition_id = competition.id
+                event._stage_id = stage.id if stage else None
+                event._home_team_id = home_team.id
+                event._away_team_id = away_team.id
+                event._venue_id = venue.id
+                event.home_goals = home_goals
+                event.away_goals = away_goals
+                event.description = description
+                db.session.commit()
+                return redirect(url_for("event_detail", event_id=event.id))
+        else:
+            form_data = form_data_from_event(event)
+
+        return render_template(
+            "event_form.html",
+            errors=errors,
+            form=form_data,
+            competitions=competitions,
+            stages=stages,
+            teams=teams,
+            venues=venues,
+            status_options=EVENT_STATUS_OPTIONS,
+            form_mode="edit",
+            event_id=event.id,
         )
 
     @app.errorhandler(404)
