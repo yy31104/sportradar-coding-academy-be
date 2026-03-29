@@ -263,6 +263,11 @@ def create_app(test_config: dict | None = None) -> Flask:
             status_options=status_options,
         )
 
+    @app.errorhandler(404)
+    def not_found(error):
+        message = getattr(error, "description", "The page you are looking for was not found.")
+        return render_template("404.html", message=message), 404
+
     return app
 
 

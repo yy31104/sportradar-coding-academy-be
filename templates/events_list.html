@@ -82,7 +82,16 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="7">No events found.</td>
+            <td colspan="7" class="empty-state">
+              <div><strong>No events found.</strong></div>
+              <div class="small" style="margin-top: 6px;">
+                {% if selected_sport or selected_status %}
+                  Try adjusting filters, or <a href="{{ url_for('list_events') }}">clear all filters</a>.
+                {% else %}
+                  Start by <a href="{{ url_for('create_event') }}">creating a new event</a>.
+                {% endif %}
+              </div>
+            </td>
           </tr>
         {% endif %}
       </tbody>

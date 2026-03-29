@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}Not Found | Sports Event Calendar{% endblock %}
+
+{% block content %}
+  <h1>Page Not Found (404)</h1>
+  <p>{{ message }}</p>
+  <p class="small">
+    Go back to <a href="{{ url_for('list_events') }}">events list</a> or
+    <a href="{{ url_for('create_event') }}">create a new event</a>.
+  </p>
+{% endblock %}

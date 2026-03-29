@@ -7,8 +7,8 @@
   <p class="small">Create a new event using existing competition, team, stage, and venue records.</p>
 
   {% if errors %}
-    <div class="warning">
-      <strong>Please fix the following:</strong>
+    <div class="error-box" role="alert" aria-live="polite">
+      <strong>{{ errors|length }} validation error(s) found. Please fix the following:</strong>
       <ul>
         {% for error in errors %}
           <li>{{ error }}</li>
