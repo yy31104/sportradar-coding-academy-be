@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import datetime, timedelta
+from typing import Any
 
 from flask import Flask, abort, redirect, render_template, request, url_for
 from sqlalchemy.exc import OperationalError
@@ -117,6 +118,29 @@ def create_app(test_config: dict | None = None) -> Flask:
         venues = Venue.query.order_by(Venue.name.asc()).all()
         return competitions, stages, teams, venues
 
+    def build_event_form_context(
+        *,
+        errors: list[str],
+        form_data: dict[str, str],
+        competitions: list[Competition],
+        stages: list[Stage],
+        teams: list[Team],
+        venues: list[Venue],
+        form_mode: str,
+        event_id: int | None,
+    ) -> dict[str, Any]:
+        return {
+            "errors": errors,
+            "form": form_data,
+            "competitions": competitions,
+            "stages": stages,
+            "teams": teams,
+            "venues": venues,
+            "status_options": EVENT_STATUS_OPTIONS,
+            "form_mode": form_mode,
+            "event_id": event_id,
+        }
+
     def parse_id(value: str, field_name: str, errors: list[str]) -> int | None:
         if not value:
             return None
@@ -128,18 +152,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     def validate_and_resolve_event_form(
         form_data: dict[str, str],
-    ) -> tuple[
-        list[str],
-        datetime | None,
-        Competition | None,
-        Stage | None,
-        Team | None,
-        Team | None,
-        Venue | None,
-        int | None,
-        int | None,
-        str | None,
-    ]:
+    ) -> dict[str, Any]:
         errors = []
 
         if not form_data["kickoff_at"]:
@@ -217,18 +230,31 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         description = form_data["description"] or None
 
-        return (
-            errors,
-            kickoff_at,
-            competition,
-            stage,
-            home_team,
-            away_team,
-            venue,
-            home_goals,
-            away_goals,
-            description,
-        )
+        return {
+            "errors": errors,
+            "kickoff_at": kickoff_at,
+            "competition": competition,
+            "stage": stage,
+            "home_team": home_team,
+            "away_team": away_team,
+            "venue": venue,
+            "home_goals": home_goals,
+            "away_goals": away_goals,
+            "description": description,
+        }
+
+    def apply_validated_form_to_event(event: Event, form_data: dict[str, str], validated: dict[str, Any]) -> None:
+        # Shared by create and edit so both flows keep identical assignment behavior.
+        event.kickoff_at = validated["kickoff_at"]
+        event.status = form_data["status"]
+        event._competition_id = validated["competition"].id
+        event._stage_id = validated["stage"].id if validated["stage"] else None
+        event._home_team_id = validated["home_team"].id
+        event._away_team_id = validated["away_team"].id
+        event._venue_id = validated["venue"].id
+        event.home_goals = validated["home_goals"]
+        event.away_goals = validated["away_goals"]
+        event.description = validated["description"]
 
     @app.get("/")
     def index():
@@ -319,6 +345,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     def create_event():
         errors = []
         form_data = empty_form_data()
+        form_mode = "create"
+        event_id = None
 
         try:
             competitions, stages, teams, venues = load_form_options()
@@ -326,62 +354,44 @@ def create_app(test_config: dict | None = None) -> Flask:
             return (
                 render_template(
                     "event_form.html",
-                    errors=["Database is not initialized yet. Run `python init_db.py` first."],
-                    form=form_data,
-                    competitions=[],
-                    stages=[],
-                    teams=[],
-                    venues=[],
-                    status_options=EVENT_STATUS_OPTIONS,
-                    form_mode="create",
-                    event_id=None,
+                    **build_event_form_context(
+                        errors=["Database is not initialized yet. Run `python init_db.py` first."],
+                        form_data=form_data,
+                        competitions=[],
+                        stages=[],
+                        teams=[],
+                        venues=[],
+                        form_mode=form_mode,
+                        event_id=event_id,
+                    ),
                 ),
                 503,
             )
 
         if request.method == "POST":
             form_data = form_data_from_request()
-            (
-                errors,
-                kickoff_at,
-                competition,
-                stage,
-                home_team,
-                away_team,
-                venue,
-                home_goals,
-                away_goals,
-                description,
-            ) = validate_and_resolve_event_form(form_data)
+            validated = validate_and_resolve_event_form(form_data)
+            errors = validated["errors"]
 
             if not errors:
-                event = Event(
-                    kickoff_at=kickoff_at,
-                    status=form_data["status"],
-                    _competition_id=competition.id,
-                    _stage_id=stage.id if stage else None,
-                    _home_team_id=home_team.id,
-                    _away_team_id=away_team.id,
-                    _venue_id=venue.id,
-                    home_goals=home_goals,
-                    away_goals=away_goals,
-                    description=description,
-                )
+                event = Event()
+                apply_validated_form_to_event(event, form_data, validated)
                 db.session.add(event)
                 db.session.commit()
                 return redirect(url_for("event_detail", event_id=event.id))
 
         return render_template(
             "event_form.html",
-            errors=errors,
-            form=form_data,
-            competitions=competitions,
-            stages=stages,
-            teams=teams,
-            venues=venues,
-            status_options=EVENT_STATUS_OPTIONS,
-            form_mode="create",
-            event_id=None,
+            **build_event_form_context(
+                errors=errors,
+                form_data=form_data,
+                competitions=competitions,
+                stages=stages,
+                teams=teams,
+                venues=venues,
+                form_mode=form_mode,
+                event_id=event_id,
+            ),
         )
 
     @app.route("/events/<int:event_id>/edit", methods=["GET", "POST"])
@@ -391,51 +401,34 @@ def create_app(test_config: dict | None = None) -> Flask:
             abort(404, description=f"Event with id {event_id} was not found.")
 
         errors = []
+        form_mode = "edit"
         try:
             competitions, stages, teams, venues = load_form_options()
         except OperationalError:
             return (
                 render_template(
                     "event_form.html",
-                    errors=["Database is not initialized yet. Run `python init_db.py` first."],
-                    form=empty_form_data(),
-                    competitions=[],
-                    stages=[],
-                    teams=[],
-                    venues=[],
-                    status_options=EVENT_STATUS_OPTIONS,
-                    form_mode="edit",
-                    event_id=event.id,
+                    **build_event_form_context(
+                        errors=["Database is not initialized yet. Run `python init_db.py` first."],
+                        form_data=empty_form_data(),
+                        competitions=[],
+                        stages=[],
+                        teams=[],
+                        venues=[],
+                        form_mode=form_mode,
+                        event_id=event.id,
+                    ),
                 ),
                 503,
             )
 
         if request.method == "POST":
             form_data = form_data_from_request()
-            (
-                errors,
-                kickoff_at,
-                competition,
-                stage,
-                home_team,
-                away_team,
-                venue,
-                home_goals,
-                away_goals,
-                description,
-            ) = validate_and_resolve_event_form(form_data)
+            validated = validate_and_resolve_event_form(form_data)
+            errors = validated["errors"]
 
             if not errors:
-                event.kickoff_at = kickoff_at
-                event.status = form_data["status"]
-                event._competition_id = competition.id
-                event._stage_id = stage.id if stage else None
-                event._home_team_id = home_team.id
-                event._away_team_id = away_team.id
-                event._venue_id = venue.id
-                event.home_goals = home_goals
-                event.away_goals = away_goals
-                event.description = description
+                apply_validated_form_to_event(event, form_data, validated)
                 db.session.commit()
                 return redirect(url_for("event_detail", event_id=event.id))
         else:
@@ -443,15 +436,16 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         return render_template(
             "event_form.html",
-            errors=errors,
-            form=form_data,
-            competitions=competitions,
-            stages=stages,
-            teams=teams,
-            venues=venues,
-            status_options=EVENT_STATUS_OPTIONS,
-            form_mode="edit",
-            event_id=event.id,
+            **build_event_form_context(
+                errors=errors,
+                form_data=form_data,
+                competitions=competitions,
+                stages=stages,
+                teams=teams,
+                venues=venues,
+                form_mode=form_mode,
+                event_id=event.id,
+            ),
         )
 
     @app.post("/events/<int:event_id>/delete")
