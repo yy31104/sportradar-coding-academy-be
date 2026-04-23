@@ -479,6 +479,30 @@ class EventAppTestCase(unittest.TestCase):
                 db.session.commit()
             db.session.rollback()
 
+    def test_negative_home_goals_rule_enforced_by_db(self):
+        payload = self._form_base_payload()
+        with self.app.app_context():
+            competition_id = int(payload["competition_id"])
+            home_team_id = int(payload["home_team_id"])
+            away_team_id = int(payload["away_team_id"])
+            venue_id = int(payload["venue_id"])
+
+            bad_event = Event(
+                kickoff_at=Event.query.order_by(Event.id.desc()).first().kickoff_at,
+                status="finished",
+                _competition_id=competition_id,
+                _stage_id=None,
+                _home_team_id=home_team_id,
+                _away_team_id=away_team_id,
+                _venue_id=venue_id,
+                home_goals=-1,
+                away_goals=0,
+            )
+            db.session.add(bad_event)
+            with self.assertRaises(IntegrityError):
+                db.session.commit()
+            db.session.rollback()
+
     def test_official_sportradar_json_mapping_is_supported(self):
         sample_payload = {
             "data": [

@@ -71,7 +71,16 @@ class Event(db.Model):
             "_home_team_id <> _away_team_id",
             name="ck_events_home_away_different",
         ),
+        CheckConstraint(
+            "(home_goals IS NULL OR home_goals >= 0)",
+            name="ck_events_home_goals_non_negative",
+        ),
+        CheckConstraint(
+            "(away_goals IS NULL OR away_goals >= 0)",
+            name="ck_events_away_goals_non_negative",
+        ),
         Index("ix_events_kickoff_at", "kickoff_at"),
+        Index("ix_events_status_kickoff_at", "status", "kickoff_at"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
