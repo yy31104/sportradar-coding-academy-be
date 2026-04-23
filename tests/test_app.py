@@ -84,6 +84,42 @@ class EventAppTestCase(unittest.TestCase):
         response = self.client.get("/events")
         self.assertEqual(response.status_code, 200)
 
+    def test_get_events_filter_by_sport_returns_matching_rows(self):
+        response = self.client.get("/events?sport=Football")
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Premier League", html)
+        self.assertIn("Bundesliga", html)
+        self.assertNotIn("NBA", html)
+        self.assertNotIn("ATP Tour", html)
+        self.assertIn('value="Football" selected', html)
+
+    def test_get_events_filter_by_status_returns_matching_rows(self):
+        response = self.client.get("/events?status=live")
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("NBA", html)
+        self.assertNotIn("Premier League", html)
+        self.assertNotIn("Bundesliga", html)
+        self.assertIn('value="live" selected', html)
+
+    def test_get_events_filter_by_sport_and_status_supports_combined_filters(self):
+        response = self.client.get("/events?sport=Football&status=finished")
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Bundesliga", html)
+        self.assertNotIn("Premier League", html)
+        self.assertNotIn("NBA", html)
+        self.assertIn('value="Football" selected', html)
+        self.assertIn('value="finished" selected', html)
+
+    def test_get_events_filtered_empty_state_is_helpful(self):
+        response = self.client.get("/events?sport=Tennis&status=finished")
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("No events found.", html)
+        self.assertIn("Try adjusting filters", html)
+
     def test_get_existing_event_returns_200(self):
         event_id = self._first_event_id()
         response = self.client.get(f"/events/{event_id}")
@@ -107,6 +143,11 @@ class EventAppTestCase(unittest.TestCase):
 
     def test_get_missing_edit_event_returns_404(self):
         response = self.client.get("/events/999999/edit")
+        self.assertEqual(response.status_code, 404)
+
+    def test_post_missing_edit_event_returns_404(self):
+        payload = self._form_base_payload()
+        response = self.client.post("/events/999999/edit", data=payload, follow_redirects=False)
         self.assertEqual(response.status_code, 404)
 
     def test_valid_event_creation_creates_new_event_and_redirects(self):
@@ -152,6 +193,8 @@ class EventAppTestCase(unittest.TestCase):
         event_id = self._first_event_id()
         with self.app.app_context():
             before_count = Event.query.count()
+            remaining_event = Event.query.order_by(Event.id.desc()).first()
+            remaining_event_id = remaining_event.id
 
         response = self.client.post(f"/events/{event_id}/delete", follow_redirects=False)
         self.assertEqual(response.status_code, 302)
@@ -160,12 +203,19 @@ class EventAppTestCase(unittest.TestCase):
         with self.app.app_context():
             after_count = Event.query.count()
             deleted = db.session.get(Event, event_id)
+            still_exists = db.session.get(Event, remaining_event_id)
         self.assertEqual(after_count, before_count - 1)
         self.assertIsNone(deleted)
+        self.assertIsNotNone(still_exists)
 
     def test_delete_missing_event_returns_404(self):
         response = self.client.post("/events/999999/delete", follow_redirects=False)
         self.assertEqual(response.status_code, 404)
+
+    def test_get_delete_route_returns_405(self):
+        event_id = self._first_event_id()
+        response = self.client.get(f"/events/{event_id}/delete")
+        self.assertEqual(response.status_code, 405)
 
     def test_invalid_edit_same_home_away_shows_validation_and_does_not_update(self):
         event_id = self._first_event_id()
@@ -187,6 +237,30 @@ class EventAppTestCase(unittest.TestCase):
             after = db.session.get(Event, event_id)
         self.assertEqual(after._home_team_id, before_home_team_id)
         self.assertEqual(after._away_team_id, before_away_team_id)
+        self.assertEqual(after.description, before_description)
+
+    def test_invalid_edit_finished_in_future_shows_validation_and_does_not_update(self):
+        event_id = self._first_event_id()
+        payload = self._form_base_payload()
+        payload["kickoff_at"] = self._datetime_local_from_now(timedelta(hours=3))
+        payload["status"] = "finished"
+        payload["home_goals"] = "1"
+        payload["away_goals"] = "0"
+        payload["description"] = "should not save"
+
+        with self.app.app_context():
+            before = db.session.get(Event, event_id)
+            before_status = before.status
+            before_description = before.description
+
+        response = self.client.post(f"/events/{event_id}/edit", data=payload, follow_redirects=True)
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("A finished event cannot have a future kickoff date/time.", html)
+
+        with self.app.app_context():
+            after = db.session.get(Event, event_id)
+        self.assertEqual(after.status, before_status)
         self.assertEqual(after.description, before_description)
 
     def test_invalid_same_home_away_shows_validation_and_does_not_create(self):
@@ -303,6 +377,23 @@ class EventAppTestCase(unittest.TestCase):
             after_count = Event.query.count()
         self.assertEqual(after_count, before_count)
 
+    def test_invalid_live_too_far_in_future_shows_validation_error(self):
+        payload = self._form_base_payload()
+        payload["kickoff_at"] = self._datetime_local_from_now(timedelta(hours=1))
+        payload["status"] = "live"
+
+        with self.app.app_context():
+            before_count = Event.query.count()
+
+        response = self.client.post("/events/new", data=payload, follow_redirects=True)
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("A live event cannot be too far in the future.", html)
+
+        with self.app.app_context():
+            after_count = Event.query.count()
+        self.assertEqual(after_count, before_count)
+
     def test_invalid_one_sided_score_pair_shows_validation_error(self):
         payload = self._form_base_payload()
         payload["kickoff_at"] = self._datetime_local_from_now(timedelta(days=1))
@@ -317,6 +408,44 @@ class EventAppTestCase(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn("Scores must include both home and away goals, or neither.", html)
+
+        with self.app.app_context():
+            after_count = Event.query.count()
+        self.assertEqual(after_count, before_count)
+
+    def test_invalid_postponed_with_scores_shows_validation_error(self):
+        payload = self._form_base_payload()
+        payload["kickoff_at"] = self._datetime_local_from_now(timedelta(days=1))
+        payload["status"] = "postponed"
+        payload["home_goals"] = "1"
+        payload["away_goals"] = "1"
+
+        with self.app.app_context():
+            before_count = Event.query.count()
+
+        response = self.client.post("/events/new", data=payload, follow_redirects=True)
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Postponed events should not include scores.", html)
+
+        with self.app.app_context():
+            after_count = Event.query.count()
+        self.assertEqual(after_count, before_count)
+
+    def test_invalid_cancelled_with_scores_shows_validation_error(self):
+        payload = self._form_base_payload()
+        payload["kickoff_at"] = self._datetime_local_from_now(timedelta(days=1))
+        payload["status"] = "cancelled"
+        payload["home_goals"] = "2"
+        payload["away_goals"] = "0"
+
+        with self.app.app_context():
+            before_count = Event.query.count()
+
+        response = self.client.post("/events/new", data=payload, follow_redirects=True)
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Cancelled events should not include scores.", html)
 
         with self.app.app_context():
             after_count = Event.query.count()
