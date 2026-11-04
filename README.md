@@ -1,219 +1,92 @@
-# Sportradar Coding Academy 2026 BE Assignment
+# Sports Event Calendar
 
-Simple sports event calendar web app built with Flask, SQLite, SQLAlchemy, and Jinja templates.
+![Flask](https://img.shields.io/badge/Flask-3.1-0F6FBF?style=flat-square&labelColor=25292E)
+![SQLite](https://img.shields.io/badge/Database-SQLite-0F6FBF?style=flat-square&labelColor=25292E)
 
-## Project Overview
+A valid kickoff time can conflict with a match's status.
 
-This project implements a minimal backend-first sports event calendar that supports:
+Sports Event Calendar stores fixtures in SQLite, lists them by kickoff time, and filters them by sport and status. You can add, edit, or delete events using shared competition, team, stage, and venue records. The server checks that dates, scores, and statuses agree before saving a form.
 
-- listing events
-- viewing one event
-- adding a new event
-- editing an existing event (optional)
-- deleting an event intentionally from detail page (optional)
+Backend coding-academy exercise, with its original reflection retained in docs. Built with AI assistance.
 
-The focus is on clear relational modeling, efficient event queries, and simple interview-friendly code.
+[Run locally](#run-locally) · [Docs](#docs)
 
-This is a backend-first assignment implementation, so the UI is intentionally minimal and focused on demonstrating relational modeling, query efficiency, and clear request handling.
+![Sports event list with sport and status filters](docs/images/events.png)
 
-## Features Implemented
+The local app showing its built-in sample dataset.
 
-- Relational schema design with normalized entities (`sports`, `competitions`, `stages`, `teams`, `venues`, `events`)
-- ERD documentation in:
-  - `docs/ERD.md`
-  - `docs/erd.mmd`
-- SQLite + SQLAlchemy models and relationships
-- Database initialization script
-- Seed script with:
-  - optional JSON import support (if a local JSON file is available)
-  - compatibility mapping for official Sportradar-style JSON fields (`data`, `originCompetitionName`, `dateVenue`, `timeVenueUTC`, nested `homeTeam`/`awayTeam`, nested `result`)
-  - built-in fallback sample dataset for demo use
-- Event list page (`GET /events`) with eager loading and kickoff-time sorting
-- Optional list filters for `sport` and `status` via query parameters
-- Event detail page (`GET /events/<id>`)
-- Event creation page (`GET/POST /events/new`) with simple validation
-- Event update page (`GET/POST /events/<id>/edit`) reusing the same validation rules
-- Event remove action (`POST /events/<id>/delete`) from the detail page
-- Status/time/score consistency validation for create and edit flows
-- Shared base template and consistent navigation
-- Custom 404 page for missing routes and missing event detail pages
-- Minimal automated test suite (`unittest` + Flask test client) for routes, create/edit/delete flows, validation rules, and seed idempotency
+## How it works
 
-## Tech Stack
+1. [models.py](models.py) defines the six related tables, foreign keys, indexes, and score/team checks.
+2. [init_db.py](init_db.py) creates the SQLite schema; [seed_data.py](seed_data.py) loads local JSON or sample fixtures and reuses matching records.
+3. [app.py](app.py) filters and sorts events, loading related records before rendering the [event list](templates/events_list.html) and [detail](templates/event_detail.html).
+4. The same form validation in `app.py` handles creation and edits, including team selection, kickoff time, status, and paired scores.
 
-- Python
-- Flask
-- SQLite
-- SQLAlchemy / Flask-SQLAlchemy
-- Jinja templates
+## Project layout
 
-## Project Structure
+| Path | What | Start here |
+| --- | --- | --- |
+| `app.py` | Routes, queries, and form validation | [Application factory](app.py) |
+| `models.py` | Sports, competitions, stages, teams, venues, and events | [Models](models.py) |
+| `init_db.py`, `seed_data.py` | Local database setup and fixture import | [Seed loader](seed_data.py) |
+| `templates/` | List, detail, and create/edit pages | [Event form](templates/event_form.html) |
+| `tests/` | Route, validation, database, and seed behavior | [Tests](tests/test_app.py) |
+| `docs/` | Schema diagram and assignment reflection | [Database design](docs/ERD.md) |
 
-```text
-.
-|-- app.py
-|-- models.py
-|-- init_db.py
-|-- seed_data.py
-|-- requirements.txt
-|-- README.md
-|-- AI_Reflection.txt
-|-- docs/
-|   |-- ERD.md
-|   `-- erd.mmd
-|-- tests/
-|   `-- test_app.py
-|-- templates/
-|   |-- base.html
-|   |-- events_list.html
-|   |-- event_detail.html
-|   |-- event_form.html
-|   `-- 404.html
-`-- materials/
-    `-- assignment source PDFs
+## Run locally
+
+Requires Python 3.12. Run these commands from a shell on macOS or Linux.
+
+```bash
+git clone https://github.com/yy31104/sportradar-coding-academy-be.git
 ```
 
-## Database Design Summary
-
-Main tables:
-
-- `sports`
-- `competitions` (FK `_sport_id`)
-- `stages`
-- `teams`
-- `venues`
-- `events` (FKs: `_competition_id`, `_stage_id`, `_home_team_id`, `_away_team_id`, `_venue_id`)
-
-Design notes:
-
-- All FK columns use the required underscore prefix.
-- `events` stores references, not redundant competition/stage names.
-- `events._stage_id` is nullable (stage optional).
-- `venues.name` is nullable.
-- `events.home_goals`, `events.away_goals`, `events.description` are nullable.
-- `events` has:
-  - index on `kickoff_at` (sorting/filtering support)
-  - check constraint to prevent same home/away team
-
-## Setup Instructions
-
-From the project root:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+```bash
+cd sportradar-coding-academy-be
 ```
 
-## Database Initialization
-
-Create SQLite database and tables:
-
-```powershell
-python init_db.py
+```bash
+python3.12 -m venv .venv
 ```
 
-This creates `instance/events.db`.
-
-## Seed Sample Data
-
-Load sample data:
-
-```powershell
-python seed_data.py
+```bash
+.venv/bin/python -m pip install -r requirements.txt
 ```
 
-Optional JSON path:
-
-```powershell
-python seed_data.py --json path\to\events.json
+```bash
+.venv/bin/python init_db.py
 ```
 
-Fallback behavior:
-
-- If no usable local JSON is found, the script uses a built-in sample dataset.
-- Seed script is designed to be practical for repeated runs (updates existing matching events rather than duplicating them in normal usage).
-
-## Run Locally
-
-```powershell
-python app.py
+```bash
+.venv/bin/python seed_data.py
 ```
 
-Open in browser:
-
-- `http://127.0.0.1:5000/events`
-
-## Run Tests
-
-```powershell
-python -m unittest -v tests.test_app
+```bash
+.venv/bin/python app.py
 ```
 
-or:
+Open [127.0.0.1:5000/events](http://127.0.0.1:5000/events), filter the list, or choose Add Event. Data is stored in the ignored `instance/events.db` file. On Windows, use `.venv\Scripts\python.exe` for the commands after environment creation.
 
-```powershell
-python -m unittest discover -s tests -v
+Tests take about a second after installation:
+
+```bash
+.venv/bin/python -m unittest -v tests.test_app
 ```
 
-## Main Routes
+## Design notes
 
-- `GET /`  
-  Redirects to `/events`
+Competition, sport, team, stage, and venue records are shared across events. List and detail queries use `joinedload` so rendering related fields avoids a separate lookup for every row.
 
-- `GET /health`  
-  Basic health check
+Creation and editing share the same server validation. Database checks also reject identical home/away teams and negative scores; status/time/score consistency is handled in the application.
 
-- `GET /events`  
-  Event list page (ordered by kickoff time).  
-  Supports optional filters:
-  - `GET /events?sport=Football`
-  - `GET /events?status=scheduled`
-  - combined filters are supported  
-  Uses eager loading (`joinedload`) to avoid N+1 query issues.
+## Limits
 
-- `GET /events/<event_id>`  
-  Single event detail page.  
-  Returns 404 if event is missing.
+- This is a local demo without accounts or permissions; visitors can edit and delete events.
+- Kickoff times are treated and displayed as UTC; the UI has no per-user timezone conversion.
+- The built-in sample fixtures have fixed dates and statuses. Live schedules require a separate data source.
 
-- `GET /events/new`  
-  Event creation form page.
+## Docs
 
-- `POST /events/new`  
-  Creates a new event and redirects to detail page on success.
-
-- `GET /events/<event_id>/edit`  
-  Event edit form page with prefilled values.
-
-- `POST /events/<event_id>/edit`  
-  Updates an event and redirects to detail page on success.
-
-- `POST /events/<event_id>/delete`  
-  Deletes an event and redirects to `/events`.
-
-## Technical Decisions and Trade-offs
-
-- SQLite was chosen for assignment scope: fast local setup, no external service dependency, and easy reproducibility.  
-  Trade-off: not aimed at high-concurrency production workloads.
-
-- The schema is split into related tables (`sports`, `competitions`, `stages`, `teams`, `venues`, `events`) to stay close to 3NF, avoid redundancy, and keep referential integrity explicit.  
-  Trade-off: more joins compared with a denormalized single table.
-
-- `joinedload(...)` is used in event list/detail queries to avoid N+1 behavior during template rendering and keep query count predictable.
-
-- The seed script is idempotent in normal use so setup can be repeated safely during local development/demo without creating duplicate event rows.
-
-- UTC is the working time assumption: kickoff values are treated and displayed in UTC in this project; per-user timezone conversion is intentionally out of scope.
-
-## Assumptions and Key Decisions
-
-- Current event model is two-sided (`home_team` vs `away_team`) for simplicity.
-- Stage is optional on event creation.
-- Form validation is intentionally simple and server-side:
-  - required relationship fields
-  - valid IDs
-  - different home/away teams
-  - valid datetime and non-negative integer scores
-  - status/time/score consistency (for example: `finished` requires scores, `scheduled` cannot include scores)
-- Query efficiency was prioritized for event listing and detail rendering through relationship eager loading.
-- UI is intentionally minimal to keep the implementation easy to explain in an interview.
+- [Database design](docs/ERD.md)
+- [Mermaid diagram](docs/erd.mmd)
+- [Assignment reflection](docs/AI_Reflection.txt)

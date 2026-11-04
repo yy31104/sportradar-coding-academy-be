@@ -30,7 +30,7 @@ erDiagram
     EVENTS {
         INTEGER id PK
         DATETIME kickoff_at "NOT NULL"
-        TEXT status "NOT NULL, DEFAULT scheduled"
+        TEXT status "NOT NULL, ORM default scheduled"
         INTEGER home_goals "NULLABLE"
         INTEGER away_goals "NULLABLE"
         TEXT description "NULLABLE"
@@ -43,7 +43,7 @@ erDiagram
 
     SPORTS ||--o{ COMPETITIONS : has
     COMPETITIONS ||--o{ EVENTS : contains
-    STAGES ||--o{ EVENTS : classifies
+    STAGES |o--o{ EVENTS : classifies
     TEAMS ||--o{ EVENTS : home_team
     TEAMS ||--o{ EVENTS : away_team
     VENUES ||--o{ EVENTS : hosts

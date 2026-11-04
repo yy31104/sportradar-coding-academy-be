@@ -4,3 +4,15 @@
 venv/
 instance/
 *.db
+
+# Company assignment materials are kept outside Git.
+/materials/
+*.pdf
+
+# Local configuration and runtime output.
+.env
+.env.*
+*.log
+*.db-shm
+*.db-wal
+.DS_Store
